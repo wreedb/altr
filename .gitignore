@@ -16,3 +16,6 @@ altr-test-*
 *.lst
 *.8
 *.db
+*.so
+*.a
+*.out
