@@ -44,7 +44,7 @@ dsqlite: $(DSQLITE_A)
 
 altr: $(ALTR_SOURCES) $(SQLITE_LIB) $(DSQLITE_A)
 	@echo -e "(\033[1;32mDC\033[0m) $@"
-	@$(DC) -od./source -i -I./source -I./deps/d2sqlite/source -release -inline /usr/lib/libc.a /usr/lib/libm.a $^ -of$@
+	@$(DC) -od./source -i -I./source -I./deps/d2sqlite/source -release -inline $^ -of$@
 
 clean:
 	@rm -f ${OUTPUTS} source/*.o
