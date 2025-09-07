@@ -1,28 +1,56 @@
-.PHONY: all default clean release
-
-DUB ?= dub
-BUILDMODE ?= reldeb
-DUBC := ${DUB} build
+.PHONY: all default clean release sqlite dsqlite depclean distclean
+DC ?= ldmd2
+CC ?= gcc
+AR ?= ar
+CFLAGS ?= -O2 -pipe
 OUTPUTS := altr
+SQLITEFLAGS := -DSQLITE_ENABLE_FTS4 -DSQLITE_ENABLE_FTS5 -DSQLITE_SECURE_DELETE
+SQLITE_A    := deps/sqlite.a
+SQLITE_OBJ  := deps/sqlite.o
+DSQLITE     := deps/d2sqlite/source
+DSQLITEDIR  := deps/d2sqlite/source/d2sqlite3
+DSQLITE_A   := deps/dsqlite.a
+DSQLITE_SOURCES := $(DSQLITEDIR)/database.d \
+				   $(DSQLITEDIR)/internal/memory.d \
+				   $(DSQLITEDIR)/internal/util.d \
+				   $(DSQLITEDIR)/library.d \
+				   $(DSQLITEDIR)/package.d \
+				   $(DSQLITEDIR)/results.d \
+				   $(DSQLITEDIR)/sqlite3.d \
+				   $(DSQLITEDIR)/statement.d
 
-altr: source/main.d
-	@echo -e "\033[1;32mDUB\033[0m $@"
-	@${DUBC} > /dev/null 2>&1
+ALTR_SOURCES := source/altr/branch.d source/altr/tree.d source/altr/leaves.d source/main.d
 
-all: ${OUTPUTS}
+
+all: altr
 default: all
 
-release: source/main.d
-	@echo -e "\033[1;34mDUB\033[0m: $@ altr"
-	@${DUBC} -b $(BUILDMODE) >/dev/null 2>&1
+deps/sqlite.o: deps/sqlite.c
+	@echo -e "(\033[1;34mCC\033[0m) $@"
+	@$(CC) $(CFLAGS) $(SQLITEFLAGS) -c $^ -o $@
 
+$(SQLITE_A): deps/sqlite.o
+	@echo -e "(\033[1;34mAR\033[0m) $@"
+	@$(AR) rcs $@ $^
 
-dubclean:
-	@${DUB} clean > /dev/null 2>&1
-	@${DUB} clean-caches > /dev/null 2>&1
-	@echo -e "\033[1;33mCLEAN\033[0m dub"
+sqlite: $(SQLITE_A)
 
-clean: dubclean
-	@rm -f ${OUTPUTS}
-	@echo -e "\033[1;33mCLEAN\033[0m ${OUTPUTS}"
+$(DSQLITE_A): $(DSQLITE_SOURCES)
+	@echo -e "(\033[1;32mDC\033[0m) $@"
+	@$(DC) -release -inline -O -w -version=Have_d2sqlite3 -I$(DSQLITE) $^ -lib -vcolumns -of$@
 
+dsqlite: $(DSQLITE_A)
+
+altr: $(ALTR_SOURCES) $(SQLITE_A) $(DSQLITE_A)
+	@echo -e "(\033[1;32mDC\033[0m) $@"
+	@$(DC) -od./source -i -I./source -I./deps/d2sqlite/source -release -inline /usr/lib/libc.a /usr/lib/libm.a $^ -of$@
+
+clean:
+	@rm -f ${OUTPUTS} source/*.o
+	@echo -e "(\033[1;33mCLEAN\033[0m) ${OUTPUTS}"
+
+depclean:
+	@rm -f ${SQLITE_A} ${SQLITE_OBJ} ${DSQLITE_A}
+	@echo -e "(\033[1;33mCLEAN\033[0m) ${SQLITE_A} ${SQLITE_OBJ} ${DSQLITE_A}"
+
+distclean: clean depclean
