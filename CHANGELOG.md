@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - 2025-09-06
 
+### Changed
+- Makefile: change SQLITE_A -> SQLITE_LIB
+- README.md: fix formatting issue
+
 ### Added
 - deps/d2sqlite: submodule for sqlite bindings
 - deps/sqlite.c: SQLite amalgamation for static linking

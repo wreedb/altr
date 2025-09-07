@@ -21,6 +21,7 @@ You will need a [D](https://dlang.org) compiler, such as:
 - [ldmd2](https://github.com/ldc-developers/ldc)
 - [dmd](https://github.com/dlang/dmd)
 - [gdmd](https://github.com/d-programming-gdc/gdmd)
+
 By default, the makefile uses `ldmd2`, which can be overridden with 
 the `DC` environment variable, though there may be differences in the 
 command line flag syntax.
