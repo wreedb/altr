@@ -1,8 +1,17 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Author: Will Reed <wreed@disroot.org>
+// Project: https://github.com/wreedb/altr
+
 module altr.db;
 
-import altr.branch, altr.tree, altr.leaves;
-import std.stdio;
+import altr.header;
+import altr.tree;
+import altr.branch;
+import altr.leaves;
+
 import d2sqlite3;
+
+import std.stdio;
 import std.file : exists, mkdirRecurse;
 import std.path : dirName;
 
@@ -11,16 +20,14 @@ class AltrDatabase {
     private string dbPath;
 	private bool isOpen = false;
     
-    this(string path = "altr.db") {
+    this(string path) {
         this.dbPath = path;
         
-        // Create directory if it doesn't exist
-        // string dir = dirName(path);
-        // if (!exists(dir)) {
-        //     mkdirRecurse(dir);
-        // }
+        string dir = dirName(path);
+        if (!exists(dir)) {
+            mkdirRecurse(dir);
+        }
         
-        // Open/create database
         db = Database(path);
 		isOpen = true;
         initializeSchema();
@@ -68,50 +75,74 @@ class AltrDatabase {
         `);
     }
     
-    // Create a new tree with initial branch
-    void createTree(string name, string link, string branchName, string target, int priority) {
-        db.begin();
-        try {
-            // Insert tree
-            auto stmt = db.prepare("INSERT INTO trees (name, link, selected_branch, manual) VALUES (?, ?, ?, 0)");
-            stmt.bind(1, name);
-            stmt.bind(2, link);
-            stmt.bind(3, branchName);
-            stmt.execute();
-            
-            // Insert initial branch
-            auto branchStmt = db.prepare("INSERT INTO branches (tree_name, name, target, priority, active) VALUES (?, ?, ?, ?, 1)");
-            branchStmt.bind(1, name);
-            branchStmt.bind(2, branchName);
-            branchStmt.bind(3, target);
-            branchStmt.bind(4, priority);
-            branchStmt.execute();
-            
+	void newCreateTree(Tree tree) {
+		db.begin();
+		try {
+			// tree entry
+			auto treeStatement = db.prepare("INSERT INTO trees (name, link, selected_branch, manual) VALUES (?, ?, ?, 0)");
+			treeStatement.bind(1, tree.name);
+			treeStatement.bind(2, tree.link);
+			treeStatement.bind(3, tree.selected.name);
+			treeStatement.execute();
+		
+			// initial branch statement
+			auto branchStatement = db.prepare("INSERT INTO branches (tree_name, name, target, priority, active) VALUES (?, ?, ?, ?, 1)");
+			branchStatement.bind(1, tree.name);
+			branchStatement.bind(2, tree.selected.name);
+			branchStatement.bind(3, tree.selected.target);
+			branchStatement.bind(4, tree.selected.priority);
+			branchStatement.execute();
+			
             db.commit();
-            writeln("Created tree '", name, "' with branch '", branchName, "'");
-        } catch (Exception e) {
+            writef("[\033[1;32mALTR\033[0m] created tree '%s' with branch '%s'\n", tree.name, tree.selected.name);
+        	
+		} catch (Exception e) {
             db.rollback();
             throw e;
         }
-    }
+
+	}
+	
+	void newAddBranch(Branch b)
+	{
+		// initialize branch as inactive
+		auto statement = db.prepare("INSERT INTO branches (tree_name, name, target, priority, active) VALUES (?, ?, ?, ?, 0)");
+		statement.bind(1, b.tree.name);
+		statement.bind(2, b.name);
+		statement.bind(3, b.target);
+		statement.bind(4, b.priority);
+		statement.execute();
+		// handle automatically setting active branch based on priority
+		updateAutoSelection(b.tree.name);
+        writef("[\033[1;32mALTR\033[0m] created branch '%s' on tree '%s'\n", b.name, b.tree.name);
+	}
     
-    // Add a branch to existing tree
-    void addBranch(string treeName, string branchName, string target, int priority) {
-        auto stmt = db.prepare("INSERT INTO branches (tree_name, name, target, priority, active) VALUES (?, ?, ?, ?, 0)");
-        stmt.bind(1, treeName);
-        stmt.bind(2, branchName);
-        stmt.bind(3, target);
-        stmt.bind(4, priority);
-        stmt.execute();
-        
-        // Update selection if this branch has higher priority and tree is in auto mode
-        updateAutoSelection(treeName);
-        
-        writeln("Added branch '", branchName, "' to tree '", treeName, "'");
-    }
-    
-    // Add leaves to a branch
-    void addLeaves(string treeName, string branchName, string[string] leaves) {
+	void newAddLeaf(Branch b, string[] leaf)
+	{
+		auto branchStatement = db.prepare("SELECT id FROM branches WHERE tree_name = ? AND name = ?");
+		branchStatement.bind(1, b.tree.name);
+		branchStatement.bind(2, b.name);
+		auto queryResults = branchStatement.execute();
+
+		if (queryResults.empty())
+		{
+			throw new Exception("[\033[1;31mALTR\033[0m] branch " ~ b.name ~ " not found.");
+		}
+		
+		int branchId = queryResults.front().peek!int(0);
+		auto leafStatement = db.prepare("INSERT OR REPLACE INTO leaves (branch_id, link_path, target_path) VALUES (?, ?, ?)");
+
+		leafStatement.bind(1, branchId);
+		leafStatement.bind(2, leaf[0]);
+		leafStatement.bind(3, leaf[1]);
+		leafStatement.execute();
+
+        writef("[\033[1;32mALTR\033[0m] created leaf '%s -> %s' on '%s'\n", leaf[0], leaf[1], b.name);
+
+	}
+
+    // Add leaf to a branch
+    void addLeaf(string treeName, string branchName, string[] leaf) {
         // Get branch ID
         auto branchStmt = db.prepare("SELECT id FROM branches WHERE tree_name = ? AND name = ?");
         branchStmt.bind(1, treeName);
@@ -119,24 +150,44 @@ class AltrDatabase {
         auto results = branchStmt.execute();
         
         if (results.empty()) {
-            throw new Exception("Branch not found: " ~ branchName);
+            throw new Exception("\033[1;31maltr\033[0m: branch not found: " ~ branchName);
         }
         
         int branchId = results.front().peek!int(0);
         
-        // Insert leaves
+        // Insert leaf
         auto leafStmt = db.prepare("INSERT OR REPLACE INTO leaves (branch_id, link_path, target_path) VALUES (?, ?, ?)");
-        foreach (linkPath, targetPath; leaves) {
-            leafStmt.bind(1, branchId);
-            leafStmt.bind(2, linkPath);
-            leafStmt.bind(3, targetPath);
-            leafStmt.execute();
-            leafStmt.reset();
-        }
         
-        writeln("Added ", leaves.length, " leaves to branch '", branchName, "'");
+		leafStmt.bind(1, branchId);
+		leafStmt.bind(2, leaf[0]);
+		leafStmt.bind(3, leaf[1]);
+		leafStmt.execute();
+		
+        writef("\033[1;32maltr\033[0m: created leaf '%s -> %s' on '%s'\n", leaf[0], leaf[1], branchName);
     }
-    
+ 	
+	Branch getBranch(string treeName, string name)
+	{
+		Branch b;
+		auto branchStatement = db.prepare("SELECT tree_name, name, target, priority, active FROM branches WHERE tree_name = ? AND name = ?");
+		branchStatement.bind(1, treeName);
+		branchStatement.bind(2, name);
+		auto queryResults = branchStatement.execute();
+		if (queryResults.empty())
+		{
+			throw new Exception("[\033[1;31mALTR\033[0m] branch " ~ name ~ " not found.");
+		}
+		auto branchRow = queryResults.front();
+		Tree t = getTree(treeName);
+
+		b.tree = &t;
+		b.name = branchRow.peek!string(1);
+		b.target = branchRow.peek!string(2);
+		b.priority = branchRow.peek!int(3);
+		b.active = branchRow.peek!bool(4);
+		return b;
+	}
+
     // Get tree information
     Tree getTree(string name) {
         Tree tree;
@@ -147,7 +198,7 @@ class AltrDatabase {
         auto treeResults = treeStmt.execute();
         
         if (treeResults.empty()) {
-            throw new Exception("Tree not found: " ~ name);
+            throw new Exception("\033[1;31maltr\033[0m: tree not found " ~ name);
         }
         
         auto treeRow = treeResults.front();
@@ -191,6 +242,35 @@ class AltrDatabase {
         return tree;
     }
     
+	void setAutoMode(string treeName) {
+		db.begin();
+		try {
+			// Verify tree exists
+			auto checkStmt = db.prepare("SELECT COUNT(*) FROM trees WHERE name = ?");
+			checkStmt.bind(1, treeName);
+			auto results = checkStmt.execute();
+
+			if (results.front().peek!int(0) == 0) {
+				throw new Exception("\033[1;31maltr\033[0m: tree '" ~ treeName ~ "' not found");
+			}
+
+			// Set tree to auto mode
+			auto modeStmt = db.prepare("UPDATE trees SET manual = 0 WHERE name = ?");
+			modeStmt.bind(1, treeName);
+			modeStmt.execute();
+
+			// Force auto selection update (reuse existing logic)
+			updateAutoSelection(treeName);
+
+			db.commit();
+			writef("\033[1;32maltr\033[0m: set tree '%s' to auto mode\n", treeName);
+
+		} catch (Exception e) {
+			db.rollback();
+			throw e;
+		}
+	}
+
     // Update auto selection based on priority
     private void updateAutoSelection(string treeName) {
         // Check if tree is in manual mode
@@ -238,7 +318,7 @@ class AltrDatabase {
             auto results = checkStmt.execute();
             
             if (results.front().peek!int(0) == 0) {
-                throw new Exception("Branch '" ~ branchName ~ "' not found in tree '" ~ treeName ~ "'");
+                throw new Exception("\033[1;31maltr\033[0m: branch '" ~ branchName ~ "' not found in tree '" ~ treeName ~ "'");
             }
             
             // Set all branches in this tree to inactive
@@ -259,7 +339,7 @@ class AltrDatabase {
             updateTreeStmt.execute();
             
             db.commit();
-            writeln("Selected branch '", branchName, "' for tree '", treeName, "' (manual mode)");
+			writef("\033[1;32maltr\033[0m: selected '%s' for tree '%s' in manual mode\n", branchName, treeName);
         } catch (Exception e) {
             db.rollback();
             throw e;

@@ -1,5 +1,12 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Author: Will Reed <wreed@disroot.org>
+// Project: https://github.com/wreedb/altr
+
 module altr.tree;
-import std.stdio, altr.branch, altr.leaves;
+
+import std.stdio;
+import altr.branch;
+import altr.leaves;
 
 struct Tree {
     string name;                // pager

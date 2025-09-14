@@ -1,0 +1,185 @@
+prefix  = $${PREFIX:-/usr}
+cc      = $${CC:-cc}
+dmd     = $${DMD:-ldmd2}
+cflags  = $${CFLAGS:--pipe -O2 -Wall}
+dflags  = $${DFLAGS:--i -release -O}
+gzip    = $${GZIP:-gzip}
+ar      = $${AR:-ar}
+arflags = $${ARFLAGS:-rcs}
+
+gzip-flags   = --rsyncable --synchronous -dc
+sqlite-flags = -DSQLITE_ENABLE_COLUMN_METADATA=1 -DSQLITE_ENABLE_UNLOCK_NOTIFY=1 -DSQLITE_ENABLE_DBSTAT_VTAB=1 -DSQLITE_SECURE_DELETE=1 -DSQLITE_ENABLE_FTS3_TOKENIZER=1 -DSQLITE_ENABLE_FTS5=1
+
+sqlite-c-gz = deps/sqlite.c.gz
+sqlite-c    = deps/sqlite.c
+sqlite-o    = deps/sqlite.o
+sqlite-a    = deps/sqlite.a
+
+man-source-dir  = doc/source
+man-output-dir  = doc/out
+man-source-file = doc/source/altr.rst
+man-output-file = doc/out/altr.8
+
+dsqlite-top-dir = deps/dsqlite/source
+dsqlite-dir = deps/dsqlite/source/d2sqlite3
+dsqlite-source-files = ${dsqlite-dir}/database.d ${dsqlite-dir}/library.d ${dsqlite-dir}/package.d ${dsqlite-dir}/results.d ${dsqlite-dir}/sqlite3.d ${dsqlite-dir}/statement.d ${dsqlite-dir}/internal/memory.d ${dsqlite-dir}/internal/util.d
+dsqlite-a = deps/dsqlite.a
+
+altr-dir = source/altr
+altr-source-files = source/main.d ${altr-dir}/branch.d ${altr-dir}/leaves.d ${altr-dir}/tree.d ${altr-dir}/header.d ${altr-dir}/symlinks.d
+
+rule submodule
+    command = git submodule update --init --depth=1
+    description = ${name}
+
+rule compile-c
+    command = ${cc} ${flags} ${in} -o ${out}
+    description = CC ${name}
+
+rule compile-d
+    command = ${dmd} ${flags} ${inputs} ${in} -of${out}
+    description = DMD ${name}
+
+rule gunzip
+    command = ${gzip} ${gzip-flags} ${in} > ${out}
+    description = GUNZIP ${name}
+
+rule static-lib
+    command = ${ar} ${flags} ${out} ${in}
+    description = AR ${name}
+
+rule clean
+    command = rm -f ${path}
+    description = CLEAN ${name}
+
+rule cleandir
+    command = rm -rf ${path}
+    description = CLEAN ${path}
+
+rule sphinx
+    command = sphinx-build -Q -b man ${inpath} ${outpath}
+    description = SPHINX ${name}
+
+rule man
+    command = man ${in}
+    description = MAN ${name}
+
+build ${sqlite-c}: gunzip ${sqlite-c-gz}
+    name = sqlite.c
+
+build ${sqlite-o}: compile-c ${sqlite-c}
+    name = sqlite.o
+    flags = ${flags} ${sqlite-flags} -c
+
+build ${sqlite-a}: static-lib ${sqlite-o}
+    name = sqlite.a
+    flags = ${arflags}
+
+build deps/dsqlite: submodule
+    name = dsqlite
+
+build sqlite.c: phony ${sqlite-c}
+build sqlite.o: phony ${sqlite-o}
+build sqlite.a: phony ${sqlite-a}
+
+build ${man-output-file}: sphinx ${man-source-file}
+    name = altr.8
+    inpath = ${man-source-dir}
+    outpath = ${man-output-dir}
+
+build clean-altr.8: clean
+    path = ${man-output-file}
+    name = altr.8
+
+build clean-docdir: cleandir
+    path = ${man-output-dir}
+
+build clean-sqlite.c: clean
+    path = ${sqlite-c}
+    name = sqlite.c
+
+build clean-sqlite.o: clean
+    path = ${sqlite-o}
+    name = sqlite.o
+
+build clean-sqlite.a: clean
+    path = ${sqlite-a}
+    name = sqlite.a
+
+build preview-man: man ${man-output-file}
+    name = altr.8
+
+build ${dsqlite-a}: compile-d | deps/dsqlite
+    inputs = ${dsqlite-source-files}
+    flags = ${dflags} -I${dsqlite-top-dir} -I${dsqlite-dir} -w -lib -vcolumns
+    name = dsqlite.a
+
+build clean-dsqlite.a: clean
+    path = ${dsqlite-a}
+    name = dsqlite.a
+
+build dsqlite.a: phony ${dsqlite-a}
+
+build altr: compile-d ${sqlite-a} ${dsqlite-a}
+    inputs = ${altr-source-files}
+    flags = ${dflags} -I./source -I./source/altr -I${dsqlite-top-dir} -od./source
+    name = altr
+
+build clean-altr: clean
+    path = altr source/altr.o
+    name = altr
+
+build all: phony deps/dsqlite sqlite.c sqlite.o sqlite.a dsqlite.a altr
+build clean: phony clean-sqlite.c clean-sqlite.o clean-sqlite.a clean-dsqlite.a clean-altr
+build man: phony ${man-output-file}
+build docs: phony man
+
+build clean-man: phony clean-altr.8
+build clean-docs: phony clean-man clean-docdir
+build clean-all: phony clean clean-docs
+build distclean: phony clean-all
+
+rule install-dir
+    command = install -dm ${mode} $${DESTDIR}${path}
+    description = INSTALL-DIR ${name}
+
+rule install-file
+    command = install -m ${mode} ${in} $${DESTDIR}${path}
+    description = INSTALL ${name}
+
+rule uninstall-file
+    command = rm -f $${DESTDIR}${path}
+    description = UNINSTALL ${name}
+
+build install-bindir: install-dir
+    mode = 0755
+    path = ${prefix}/bin
+    name = bin
+
+build install-man1dir: install-dir
+    mode = 0755
+    path = ${prefix}/share/man/man1
+    name = man1
+
+build install-manpage: install-file ${man-output-file} | install-man1dir
+    mode = 0644
+    path = ${prefix}/share/man/man1/altr.8
+    name = altr.8
+
+build install-altr: install-file altr | install-bindir
+    mode = 0755
+    path = ${prefix}/bin/altr
+    name = altr
+
+build uninstall-altr: uninstall-file
+    path = ${prefix}/bin/altr
+    name = altr
+
+build uninstall-manpage: uninstall-file
+    path = ${prefix}/share/man/man1/altr.8
+    name = altr.8
+
+build install: phony install-bindir install-man1dir install-altr install-manpage
+build uninstall: phony uninstall-altr uninstall-manpage
+
+default all

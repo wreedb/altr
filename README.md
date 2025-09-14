@@ -1,3 +1,9 @@
+<!--
+SPDX-License-Identifier: GPL-3.0-or-later
+Author: Will Reed <wreed@disroot.org>
+Project: https://github.com/wreedb/altr
+-->
+
 altr
 ====
 
@@ -23,19 +29,18 @@ You will need a [D](https://dlang.org) compiler, such as:
 - [gdmd](https://github.com/d-programming-gdc/gdmd)
 
 By default, the makefile uses `ldmd2`, which can be overridden with 
-the `DC` environment variable, though there may be differences in the 
+the `DMD` environment variable, though there may be differences in the 
 command line flag syntax.
 
 ```sh
-git clone https://github.com/wreedb/altr; cd altr
-git submodule update --init
-make
-```
-
-By default, the SQLite 3.50.4 amalgamation vendored with the project is built as 
-a static library. However it is also possible to build using your system SQLite 
-library if desired, though you are on your own with that. To dynamically link 
-against your systems' copy:
-```
-make SQLITE_LIB="-L -lsqlite3"
+git clone https://github.com/wreedb/altr
+cd altr
+ninja
+# if you wish to install, (as root if needed):
+ninja install
+# you may do a 'staged' install with
+DESTDIR=/path/to/stage/dir ninja install
+# the default installation paths fall under /usr, however you may
+# augment this behavior with:
+PREFIX=/usr/local ninja install
 ```

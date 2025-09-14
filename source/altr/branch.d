@@ -1,5 +1,12 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Author: Will Reed <wreed@disroot.org>
+// Project: https://github.com/wreedb/altr
+
 module altr.branch;
-import std.stdio, altr.tree, altr.leaves;
+
+import std.stdio;
+import altr.tree;
+import altr.leaves;
 
 struct Branch {
     int priority;          // 50
